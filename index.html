@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Grabador HCC-DGCV · MVP-03.2C</title>
+  <title>Grabador HCC-DGCV · MVP-03.2D1</title>
   <style>
     :root{font-family:Arial,sans-serif;color:#111827;background:#f3f4f6}
     body{margin:0;padding:24px}
@@ -11,6 +11,7 @@
     h1{font-size:22px;margin:0 0 6px}
     .muted{color:#64748b;font-size:14px}
     .status{margin:16px 0;padding:12px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0}
+    .context{margin:12px 0;padding:10px 12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;font-size:14px}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     button{border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer}
     button:disabled{opacity:.45;cursor:not-allowed}
@@ -24,7 +25,8 @@
 <body>
   <main class="card">
     <h1>Grabador HCC-DGCV</h1>
-    <div class="muted">MVP-03.2C · Grabación externa segura para el Sistema HCC-DGCV</div>
+    <div class="muted">MVP-03.2D1 · Grabación externa con contexto de sesión firmado</div>
+    <div id="context" class="context">Modo independiente: sin sesión HCC vinculada.</div>
 
     <div id="state" class="status">Audio: NO INICIADO</div>
 
@@ -45,11 +47,24 @@
 <script>
 let recorder=null,stream=null,chunks=[],startedAt=0,pausedAt=0,pausedTotal=0,timerId=null,blob=null,audioUrl=null;
 const $=id=>document.getElementById(id);
+const qp=new URLSearchParams(location.search);
+const HCC_CONTEXT={
+  sid:qp.get('sid')||'',
+  exp:qp.get('exp')||'',
+  nonce:qp.get('nonce')||'',
+  sig:qp.get('sig')||''
+};
+const hasHccContext=!!(HCC_CONTEXT.sid&&HCC_CONTEXT.exp&&HCC_CONTEXT.nonce&&HCC_CONTEXT.sig);
+if(hasHccContext){
+  $('context').textContent='Sesión HCC vinculada: '+HCC_CONTEXT.sid+' · contexto temporal recibido.';
+  $('context').className='context ok';
+}
 function fmt(sec){sec=Math.max(0,Math.floor(sec));const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;return [h,m,s].map(v=>String(v).padStart(2,'0')).join(':')}
 function elapsed(){if(!startedAt)return 0;const now=Date.now();let p=pausedTotal;if(pausedAt)p+=now-pausedAt;return (now-startedAt-p)/1000}
 function tick(){$('timer').textContent=fmt(elapsed())}
 function mime(){const c=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'];return c.find(x=>window.MediaRecorder&&MediaRecorder.isTypeSupported(x))||''}
 function cleanupStream(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
+function safeId(v){return String(v||'').replace(/[^A-Za-z0-9_-]/g,'_').slice(0,80)}
 $('start').onclick=async()=>{
   try{
     if(!window.isSecureContext)throw new Error('Se requiere un contexto HTTPS seguro.');
@@ -62,7 +77,7 @@ $('start').onclick=async()=>{
       if(audioUrl)URL.revokeObjectURL(audioUrl);
       audioUrl=URL.createObjectURL(blob);$('player').src=audioUrl;$('download').disabled=false;cleanupStream();
       $('state').textContent='Audio: GRABACIÓN FINALIZADA';$('state').className='status ok';
-      $('info').textContent='Reproduzca el audio para verificarlo y luego descargue el archivo WebM para subirlo al HCC.';
+      $('info').textContent=hasHccContext?'Audio listo y asociado al contexto de la sesión. En este incremento aún se descarga manualmente.':'Reproduzca el audio para verificarlo y luego descargue el archivo WebM para subirlo al HCC.';
     };
     startedAt=Date.now();pausedAt=0;pausedTotal=0;recorder.start(1000);timerId=setInterval(tick,500);
     $('start').disabled=true;$('pause').disabled=false;$('stop').disabled=false;$('state').textContent='Audio: GRABANDO';$('state').className='status';$('info').textContent='Formato: '+(recorder.mimeType||mt||'predeterminado');tick();
@@ -70,7 +85,7 @@ $('start').onclick=async()=>{
 };
 $('pause').onclick=()=>{if(!recorder)return;if(recorder.state==='recording'){recorder.pause();pausedAt=Date.now();$('pause').textContent='Reanudar';$('state').textContent='Audio: PAUSADO'}else if(recorder.state==='paused'){recorder.resume();pausedTotal+=Date.now()-pausedAt;pausedAt=0;$('pause').textContent='Pausar';$('state').textContent='Audio: GRABANDO'}};
 $('stop').onclick=()=>{if(!recorder||recorder.state==='inactive')return;if(recorder.state==='paused')recorder.resume();recorder.stop();if(timerId)clearInterval(timerId);timerId=null;tick();$('start').disabled=false;$('pause').disabled=true;$('stop').disabled=true;$('pause').textContent='Pausar'};
-$('download').onclick=()=>{if(!blob)return;const ext=blob.type.includes('ogg')?'ogg':blob.type.includes('mp4')?'m4a':'webm';const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='HCC_DGCV_'+new Date().toISOString().replace(/[:.]/g,'-')+'.'+ext;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+$('download').onclick=()=>{if(!blob)return;const ext=blob.type.includes('ogg')?'ogg':blob.type.includes('mp4')?'m4a':'webm';const a=document.createElement('a');a.href=URL.createObjectURL(blob);const sid=hasHccContext?'_'+safeId(HCC_CONTEXT.sid):'';a.download='HCC_DGCV'+sid+'_'+new Date().toISOString().replace(/[:.]/g,'-')+'.'+ext;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
 </script>
 </body>
 </html>
